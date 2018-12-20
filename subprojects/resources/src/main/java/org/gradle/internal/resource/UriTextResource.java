@@ -16,15 +16,21 @@
 
 package org.gradle.internal.resource;
 
+import com.google.common.io.Files;
 import org.apache.commons.io.IOUtils;
 import org.gradle.api.resources.MissingResourceException;
+import org.gradle.api.resources.ResourceException;
 import org.gradle.internal.FileUtils;
 import org.gradle.internal.SystemProperties;
+import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.hash.Hashing;
+import org.gradle.internal.hash.PrimitiveHasher;
 import org.gradle.util.GradleVersion;
 
 import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -37,8 +43,26 @@ import java.nio.charset.Charset;
  * A {@link TextResource} implementation backed by a URI. Defaults content encoding to UTF-8.
  */
 public class UriTextResource implements TextResource {
+    private static final HashCode SIGNATURE = Hashing.signature(UriTextResource.class);
+    protected static final Charset DEFAULT_ENCODING = Charset.forName("utf-8");
+    private static final String USER_AGENT;
 
-    protected static final String DEFAULT_ENCODING = "utf-8";
+    static {
+        String osName = System.getProperty("os.name");
+        String osVersion = System.getProperty("os.version");
+        String osArch = System.getProperty("os.arch");
+        String javaVendor = System.getProperty("java.vendor");
+        String javaVersion = SystemProperties.getInstance().getJavaVersion();
+        String javaVendorVersion = System.getProperty("java.vm.version");
+        USER_AGENT = String.format("Gradle/%s (%s;%s;%s) (%s;%s;%s)",
+            GradleVersion.current().getVersion(),
+            osName,
+            osVersion,
+            osArch,
+            javaVendor,
+            javaVersion,
+            javaVendorVersion);
+    }
 
     private final File sourceFile;
     private final URI sourceUri;
@@ -77,6 +101,10 @@ public class UriTextResource implements TextResource {
 
     @Override
     public boolean getHasEmptyContent() {
+        File file = getFile();
+        if (file != null) {
+            return file.length() == 0;
+        }
         Reader reader = getAsReader();
         try {
             try {
@@ -91,6 +119,14 @@ public class UriTextResource implements TextResource {
 
     @Override
     public String getText() {
+        File file = getFile();
+        if (file != null) {
+            try {
+                return Files.asCharSource(file, getCharset()).read();
+            } catch (Exception e) {
+                throw ResourceExceptions.failure(sourceUri, String.format("Could not read %s.", getDisplayName()), e);
+            }
+        }
         Reader reader = getAsReader();
         try {
             try {
@@ -101,6 +137,14 @@ public class UriTextResource implements TextResource {
         } catch (Exception e) {
             throw ResourceExceptions.failure(sourceUri, String.format("Could not read %s.", getDisplayName()), e);
         }
+    }
+
+    @Override
+    public HashCode getContentHash() throws ResourceException {
+        PrimitiveHasher hasher = Hashing.newPrimitiveHasher();
+        hasher.putHash(SIGNATURE);
+        hasher.putString(getText());
+        return hasher.hash();
     }
 
     @Override
@@ -119,6 +163,10 @@ public class UriTextResource implements TextResource {
 
     @Override
     public boolean getExists() {
+        File file = getFile();
+        if (file != null) {
+            return file.exists();
+        }
         try {
             Reader reader = openReader();
             try {
@@ -134,6 +182,10 @@ public class UriTextResource implements TextResource {
     }
 
     protected Reader openReader() throws IOException {
+        File file = getFile();
+        if (file != null) {
+            return new FileReader(file, getCharset());
+        }
         final URLConnection urlConnection = sourceUri.toURL().openConnection();
         urlConnection.setRequestProperty("User-Agent", getUserAgentString());
 
@@ -144,7 +196,7 @@ public class UriTextResource implements TextResource {
         }
         urlConnection.connect();
         String contentType = urlConnection.getContentType();
-        String charset = extractCharacterEncoding(contentType, DEFAULT_ENCODING);
+        Charset charset = extractCharacterEncoding(contentType, DEFAULT_ENCODING);
         return new InputStreamReader(urlConnection.getInputStream(), charset);
     }
 
@@ -156,7 +208,7 @@ public class UriTextResource implements TextResource {
     @Override
     public Charset getCharset() {
         if (getFile() != null) {
-            return Charset.forName(DEFAULT_ENCODING);
+            return DEFAULT_ENCODING;
         }
         return null;
     }
@@ -166,7 +218,7 @@ public class UriTextResource implements TextResource {
         return new UriResourceLocation();
     }
 
-    public static String extractCharacterEncoding(String contentType, String defaultEncoding) {
+    public static Charset extractCharacterEncoding(String contentType, Charset defaultEncoding) {
         if (contentType == null) {
             return defaultEncoding;
         }
@@ -179,7 +231,7 @@ public class UriTextResource implements TextResource {
         pos = findNextParameter(pos, contentType, paramName, paramValue);
         while (pos != -1) {
             if (paramName.toString().equals("charset") && paramValue.length() > 0) {
-                return paramValue.toString();
+                return Charset.forName(paramValue.toString());
             }
             pos = findNextParameter(pos, contentType, paramName, paramValue);
         }
@@ -241,20 +293,7 @@ public class UriTextResource implements TextResource {
     }
 
     public static String getUserAgentString() {
-        String osName = System.getProperty("os.name");
-        String osVersion = System.getProperty("os.version");
-        String osArch = System.getProperty("os.arch");
-        String javaVendor = System.getProperty("java.vendor");
-        String javaVersion = SystemProperties.getInstance().getJavaVersion();
-        String javaVendorVersion = System.getProperty("java.vm.version");
-        return String.format("Gradle/%s (%s;%s;%s) (%s;%s;%s)",
-                GradleVersion.current().getVersion(),
-                osName,
-                osVersion,
-                osArch,
-                javaVendor,
-                javaVersion,
-                javaVendorVersion);
+        return USER_AGENT;
     }
 
     private class UriResourceLocation implements ResourceLocation {

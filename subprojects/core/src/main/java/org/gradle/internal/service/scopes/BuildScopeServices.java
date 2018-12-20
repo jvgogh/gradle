@@ -102,7 +102,6 @@ import org.gradle.groovy.scripts.internal.CrossBuildInMemoryCachingScriptClassCa
 import org.gradle.groovy.scripts.internal.DefaultScriptCompilationHandler;
 import org.gradle.groovy.scripts.internal.DefaultScriptRunnerFactory;
 import org.gradle.groovy.scripts.internal.FileCacheBackedScriptClassCompiler;
-import org.gradle.groovy.scripts.internal.ScriptSourceHasher;
 import org.gradle.initialization.BuildCancellationToken;
 import org.gradle.initialization.BuildLoader;
 import org.gradle.initialization.BuildOperationSettingsProcessor;
@@ -279,14 +278,13 @@ public class BuildScopeServices extends DefaultServiceRegistry {
     protected FileCacheBackedScriptClassCompiler createFileCacheBackedScriptClassCompiler(
         CacheRepository cacheRepository, final StartParameter startParameter,
         ProgressLoggerFactory progressLoggerFactory, ClassLoaderCache classLoaderCache, ImportsReader importsReader,
-        ScriptSourceHasher hasher, ClassLoaderHierarchyHasher classLoaderHierarchyHasher,
+        ClassLoaderHierarchyHasher classLoaderHierarchyHasher,
         BuildOperationExecutor buildOperationExecutor) {
         return new FileCacheBackedScriptClassCompiler(
             cacheRepository,
             new BuildOperationBackedScriptCompilationHandler(
                 new DefaultScriptCompilationHandler(classLoaderCache, importsReader), buildOperationExecutor),
             progressLoggerFactory,
-            hasher,
             classLoaderCache,
             classLoaderHierarchyHasher);
     }
